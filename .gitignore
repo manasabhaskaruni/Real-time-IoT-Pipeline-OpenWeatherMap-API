@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+local.settings.json
+.python_packages/
+.azure/
+.pytest_cache/
+*.env
+*.parquet
+rolling.json
+alerts.json
+.databricks/

@@ -1,0 +1,64 @@
+bundle:
+  name: weather-iot
+
+variables:
+  storage_account:
+    default: stweatheriotgpwjq
+  spark_version:
+    default: 15.4.x-scala2.12   # overwritten by the deploy script
+  node_type_id:
+    default: Standard_DS3_v2    # overwritten by the deploy script
+
+resources:
+  jobs:
+    weather_daily:
+      name: weather-daily-batch
+      max_concurrent_runs: 1
+      timeout_seconds: 3600
+      parameters:
+        - name: lookback_days
+          default: "2"
+        - name: storage_account
+          default: ${var.storage_account}
+      job_clusters:
+        - job_cluster_key: single_node
+          new_cluster:
+            spark_version: ${var.spark_version}
+            node_type_id: ${var.node_type_id}
+            num_workers: 0
+            data_security_mode: SINGLE_USER
+            spark_conf:
+              spark.databricks.cluster.profile: singleNode
+              spark.master: "local[*, 4]"
+            custom_tags:
+              ResourceClass: SingleNode
+              project: weather-iot
+      tasks:
+        - task_key: setup
+          job_cluster_key: single_node
+          notebook_task:
+            notebook_path: ./notebooks/00_setup.py
+        - task_key: bronze_to_silver
+          depends_on:
+            - task_key: setup
+          job_cluster_key: single_node
+          notebook_task:
+            notebook_path: ./notebooks/01_bronze_to_silver.py
+        - task_key: silver_to_gold
+          depends_on:
+            - task_key: bronze_to_silver
+          job_cluster_key: single_node
+          notebook_task:
+            notebook_path: ./notebooks/02_silver_to_gold.py
+        - task_key: maintenance
+          depends_on:
+            - task_key: silver_to_gold
+          job_cluster_key: single_node
+          notebook_task:
+            notebook_path: ./notebooks/03_maintenance.py
+
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://adb-7405618529596716.16.azuredatabricks.net

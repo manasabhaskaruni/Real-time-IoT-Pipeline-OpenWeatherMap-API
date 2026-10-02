@@ -120,10 +120,4 @@ az stream-analytics job stop --job-name $asa --resource-group $rg
 
 ---
 
-## 7. Problems we hit
-
-| Problem | Cause | Fix |
-|---|---|---|
-| `Duplicate output names are not allowed` | Two alert queries wrote to the same output | Combined them with `UNION` into one |
-| Downloaded file was empty | I picked a folder instead of the file | Filtered by `.json` |
 

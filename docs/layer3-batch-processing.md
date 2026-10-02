@@ -122,15 +122,6 @@ All four tasks green, in order.
 
 ![alt text](image-11.png)
 
-### Results (fill in from the `bronze_to_silver` task output)
-
-| Count | Value |
-|---|---|
-| Bronze rows read | |
-| Rejected (bad values) | |
-| After deduplication | |
-| Silver total rows | |
-
 Silver has fewer rows than bronze because deduplication removed the repeated API readings.
 
 ![alt text](image-12.png)

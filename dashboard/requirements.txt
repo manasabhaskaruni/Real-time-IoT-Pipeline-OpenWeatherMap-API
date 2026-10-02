@@ -1,0 +1,4 @@
+streamlit>=1.40
+azure-cosmos>=4.9.0
+azure-identity>=1.17.0
+pandas>=2.0

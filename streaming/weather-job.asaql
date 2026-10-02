@@ -1,8 +1,8 @@
 -- Application time = ingest_ts (event_ts lags up to ~15 min and differs per city)
 
--- Alert steps (combined into one output at the bottom)
 WITH aqi_poor AS (
     SELECT
+        CONCAT(city_id, '|AQI_POOR|', CAST(DATEDIFF(minute, CAST('1970-01-01T00:00:00Z' AS datetime), System.Timestamp()) / 10 AS nvarchar(max))) AS id,
         city_id,
         'AQI_POOR' AS alert_type,
         'warning' AS severity,
@@ -18,6 +18,7 @@ WITH aqi_poor AS (
 ),
 temp_swing AS (
     SELECT
+        CONCAT(city_id, '|TEMP_SWING|', CAST(DATEDIFF(minute, CAST('1970-01-01T00:00:00Z' AS datetime), System.Timestamp()) / 10 AS nvarchar(max))) AS id,
         city_id,
         'TEMP_SWING' AS alert_type,
         'info' AS severity,
@@ -30,6 +31,27 @@ temp_swing AS (
     FROM weather_in TIMESTAMP BY ingest_ts
     GROUP BY city_id, SlidingWindow(minute, 20)
     HAVING COUNT(*) >= 2 AND MAX(CAST(temp_c AS float)) - MIN(CAST(temp_c AS float)) >= 2.0
+),
+alerts_all AS (
+    SELECT * FROM aqi_poor
+    UNION
+    SELECT * FROM temp_swing
+),
+rolling AS (
+    SELECT
+        CONCAT(city_id, '|rolling60') AS id,
+        'rolling60' AS kind,
+        city_id,
+        System.Timestamp() AS window_end,
+        COUNT(*) AS readings,
+        AVG(CAST(temp_c AS float)) AS avg_temp_c,
+        MIN(CAST(temp_c AS float)) AS min_temp_c,
+        MAX(CAST(temp_c AS float)) AS max_temp_c,
+        AVG(CAST(humidity_pct AS float)) AS avg_humidity_pct,
+        AVG(CAST(pm2_5 AS float)) AS avg_pm2_5,
+        AVG(CAST(aqi AS float)) AS avg_aqi
+    FROM weather_in TIMESTAMP BY ingest_ts
+    GROUP BY city_id, HoppingWindow(minute, 60, 10)
 )
 
 -- 1) RAW -> bronze (Parquet). Explicit CASTs keep the Parquet schema stable.
@@ -61,22 +83,28 @@ SELECT
 INTO out_bronze
 FROM weather_in TIMESTAMP BY ingest_ts
 
--- 2) ROLLING AVERAGES: hopping window, 60 min wide, emits every 10 min
-SELECT
-    city_id,
-    System.Timestamp() AS window_end,
-    COUNT(*) AS readings,
-    AVG(CAST(temp_c AS float)) AS avg_temp_c,
-    MIN(CAST(temp_c AS float)) AS min_temp_c,
-    MAX(CAST(temp_c AS float)) AS max_temp_c,
-    AVG(CAST(humidity_pct AS float)) AS avg_humidity_pct,
-    AVG(CAST(pm2_5 AS float)) AS avg_pm2_5,
-    AVG(CAST(aqi AS float)) AS avg_aqi
-INTO out_rolling
-FROM weather_in TIMESTAMP BY ingest_ts
-GROUP BY city_id, HoppingWindow(minute, 60, 10)
+-- 2) ROLLING AVERAGES -> ADLS (cold) and Cosmos city_metrics (hot)
+SELECT * INTO out_rolling FROM rolling
+SELECT * INTO out_rolling_cosmos FROM rolling
 
--- 3) ANOMALIES: both alert types go to ONE output
-SELECT * INTO out_alerts FROM aqi_poor
-UNION
-SELECT * FROM temp_swing
+-- 3) ALERTS -> ADLS (cold) and Cosmos alerts (hot)
+SELECT * INTO out_alerts FROM alerts_all
+SELECT * INTO out_alerts_cosmos FROM alerts_all
+
+-- 4) LATEST reading per city -> Cosmos city_metrics (one document per city, overwritten each poll)
+SELECT
+    CONCAT(city_id, '|latest') AS id,
+    'latest' AS kind,
+    city_id, city, country,
+    CAST(temp_c AS float) AS temp_c,
+    CAST(feels_like_c AS float) AS feels_like_c,
+    CAST(humidity_pct AS bigint) AS humidity_pct,
+    CAST(wind_speed_ms AS float) AS wind_speed_ms,
+    weather_main,
+    CAST(aqi AS bigint) AS aqi,
+    CAST(pm2_5 AS float) AS pm2_5,
+    CAST(pm10 AS float) AS pm10,
+    event_ts,
+    ingest_ts
+INTO out_latest_cosmos
+FROM weather_in TIMESTAMP BY ingest_ts

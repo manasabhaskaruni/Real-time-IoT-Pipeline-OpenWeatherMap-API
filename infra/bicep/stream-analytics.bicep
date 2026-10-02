@@ -4,6 +4,8 @@ param eventHubName string
 param storageAccountName string
 param consumerGroup string = 'asa-cg'
 param location string = resourceGroup().location
+param cosmosAccountName string
+param cosmosDatabase string = 'weather'
 
 var tags = {
   project: 'weather-iot'
@@ -140,6 +142,58 @@ resource outAlerts 'Microsoft.StreamAnalytics/streamingjobs/outputs@2020-03-01' 
   }
 }
 
+// Cosmos outputs need the preview API: managed identity for Cosmos output is not in 2020-03-01
+resource outAlertsCosmos 'Microsoft.StreamAnalytics/streamingjobs/outputs@2021-10-01-preview' = {
+  parent: job
+  name: 'out_alerts_cosmos'
+  properties: {
+    datasource: {
+      type: 'Microsoft.Storage/DocumentDB'
+      properties: {
+        accountId: cosmosAccountName
+        database: cosmosDatabase
+        collectionNamePattern: 'alerts'
+        documentId: 'id'
+        authenticationMode: 'Msi'
+      }
+    }
+  }
+}
+
+resource outLatestCosmos 'Microsoft.StreamAnalytics/streamingjobs/outputs@2021-10-01-preview' = {
+  parent: job
+  name: 'out_latest_cosmos'
+  properties: {
+    datasource: {
+      type: 'Microsoft.Storage/DocumentDB'
+      properties: {
+        accountId: cosmosAccountName
+        database: cosmosDatabase
+        collectionNamePattern: 'city_metrics'
+        documentId: 'id'
+        authenticationMode: 'Msi'
+      }
+    }
+  }
+}
+
+resource outRollingCosmos 'Microsoft.StreamAnalytics/streamingjobs/outputs@2021-10-01-preview' = {
+  parent: job
+  name: 'out_rolling_cosmos'
+  properties: {
+    datasource: {
+      type: 'Microsoft.Storage/DocumentDB'
+      properties: {
+        accountId: cosmosAccountName
+        database: cosmosDatabase
+        collectionNamePattern: 'city_metrics'
+        documentId: 'id'
+        authenticationMode: 'Msi'
+      }
+    }
+  }
+}
+
 resource transformation 'Microsoft.StreamAnalytics/streamingjobs/transformations@2020-03-01' = {
   parent: job
   name: 'Transformation'
@@ -152,6 +206,9 @@ resource transformation 'Microsoft.StreamAnalytics/streamingjobs/transformations
     outBronze
     outRolling
     outAlerts
+    outAlertsCosmos
+    outLatestCosmos
+    outRollingCosmos
   ]
 }
 

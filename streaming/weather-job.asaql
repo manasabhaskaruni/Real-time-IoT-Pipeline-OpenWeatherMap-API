@@ -1,0 +1,82 @@
+-- Application time = ingest_ts (event_ts lags up to ~15 min and differs per city)
+
+-- Alert steps (combined into one output at the bottom)
+WITH aqi_poor AS (
+    SELECT
+        city_id,
+        'AQI_POOR' AS alert_type,
+        'warning' AS severity,
+        System.Timestamp() AS alert_ts,
+        'aqi_min' AS metric,
+        MIN(CAST(aqi AS float)) AS metric_value,
+        4.0 AS threshold_value,
+        30 AS window_minutes,
+        COUNT(*) AS readings
+    FROM weather_in TIMESTAMP BY ingest_ts
+    GROUP BY city_id, SlidingWindow(minute, 30)
+    HAVING COUNT(*) >= 3 AND MIN(CAST(aqi AS float)) >= 4.0
+),
+temp_swing AS (
+    SELECT
+        city_id,
+        'TEMP_SWING' AS alert_type,
+        'info' AS severity,
+        System.Timestamp() AS alert_ts,
+        'temp_range_c' AS metric,
+        MAX(CAST(temp_c AS float)) - MIN(CAST(temp_c AS float)) AS metric_value,
+        2.0 AS threshold_value,
+        20 AS window_minutes,
+        COUNT(*) AS readings
+    FROM weather_in TIMESTAMP BY ingest_ts
+    GROUP BY city_id, SlidingWindow(minute, 20)
+    HAVING COUNT(*) >= 2 AND MAX(CAST(temp_c AS float)) - MIN(CAST(temp_c AS float)) >= 2.0
+)
+
+-- 1) RAW -> bronze (Parquet). Explicit CASTs keep the Parquet schema stable.
+SELECT
+    schema_version, [source], sensor_id, city_id, city, country,
+    CAST(lat AS float) AS lat,
+    CAST(lon AS float) AS lon,
+    CAST(event_ts AS datetime) AS event_ts,
+    CAST(aq_event_ts AS datetime) AS aq_event_ts,
+    CAST(ingest_ts AS datetime) AS ingest_ts,
+    CAST(temp_c AS float) AS temp_c,
+    CAST(feels_like_c AS float) AS feels_like_c,
+    CAST(humidity_pct AS bigint) AS humidity_pct,
+    CAST(pressure_hpa AS bigint) AS pressure_hpa,
+    CAST(wind_speed_ms AS float) AS wind_speed_ms,
+    CAST(wind_deg AS bigint) AS wind_deg,
+    CAST(clouds_pct AS bigint) AS clouds_pct,
+    CAST(visibility_m AS bigint) AS visibility_m,
+    weather_main,
+    CAST(aqi AS bigint) AS aqi,
+    CAST(co AS float) AS co,
+    CAST([no] AS float) AS [no],
+    CAST(no2 AS float) AS no2,
+    CAST(o3 AS float) AS o3,
+    CAST(so2 AS float) AS so2,
+    CAST(pm2_5 AS float) AS pm2_5,
+    CAST(pm10 AS float) AS pm10,
+    CAST(nh3 AS float) AS nh3
+INTO out_bronze
+FROM weather_in TIMESTAMP BY ingest_ts
+
+-- 2) ROLLING AVERAGES: hopping window, 60 min wide, emits every 10 min
+SELECT
+    city_id,
+    System.Timestamp() AS window_end,
+    COUNT(*) AS readings,
+    AVG(CAST(temp_c AS float)) AS avg_temp_c,
+    MIN(CAST(temp_c AS float)) AS min_temp_c,
+    MAX(CAST(temp_c AS float)) AS max_temp_c,
+    AVG(CAST(humidity_pct AS float)) AS avg_humidity_pct,
+    AVG(CAST(pm2_5 AS float)) AS avg_pm2_5,
+    AVG(CAST(aqi AS float)) AS avg_aqi
+INTO out_rolling
+FROM weather_in TIMESTAMP BY ingest_ts
+GROUP BY city_id, HoppingWindow(minute, 60, 10)
+
+-- 3) ANOMALIES: both alert types go to ONE output
+SELECT * INTO out_alerts FROM aqi_poor
+UNION
+SELECT * FROM temp_swing

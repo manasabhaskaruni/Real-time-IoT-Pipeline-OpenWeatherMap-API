@@ -10,3 +10,4 @@ local.settings.json
 rolling.json
 alerts.json
 .databricks/
+.azure/

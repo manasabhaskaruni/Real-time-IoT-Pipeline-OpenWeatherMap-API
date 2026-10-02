@@ -1,0 +1,25 @@
+Avg Temp C =
+DIVIDE(
+    SUMX(weather_daily, weather_daily[avg_temp_c] * weather_daily[readings]),
+    SUM(weather_daily[readings])
+)
+
+Avg PM2.5 =
+DIVIDE(
+    SUMX(weather_daily, weather_daily[avg_pm2_5] * weather_daily[readings]),
+    SUM(weather_daily[readings])
+)
+
+Avg Humidity =
+DIVIDE(
+    SUMX(weather_daily, weather_daily[avg_humidity_pct] * weather_daily[readings]),
+    SUM(weather_daily[readings])
+)
+
+Poor AQI Readings = SUM(weather_daily[readings_aqi_4]) + SUM(weather_daily[readings_aqi_5])
+
+Poor AQI Share = DIVIDE([Poor AQI Readings], SUM(weather_daily[readings]))
+
+Rolling 7d PM2.5 = AVERAGE(weather_rolling_7d[roll7_avg_pm2_5])
+
+Rolling 7d Temp C = AVERAGE(weather_rolling_7d[roll7_avg_temp_c])

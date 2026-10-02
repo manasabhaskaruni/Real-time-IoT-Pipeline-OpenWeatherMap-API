@@ -15,6 +15,7 @@ $asa   = "asa-weather-$sfx"
 $dbx   = "dbx-weather-$sfx"
 $dbac  = "dbac-weather-$sfx"
 $adf   = "adf-weather-$sfx"
+$syn   = "syn-weather-$sfx"
 $dbxhost = "https://adb-7405618529596716.16.azuredatabricks.net"    
 if ($dbxhost) { $env:DATABRICKS_HOST = $dbxhost; $env:DATABRICKS_AUTH_TYPE = "azure-cli" }
 $tags  = "project=weather-iot", "env=dev"
